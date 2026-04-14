@@ -1,0 +1,14 @@
+# Blueprint Render: статический фронт (Vite) с SPA-rewrite.
+# Если сервис уже создан вручную в Dashboard — добавьте Rewrite: /* → /index.html (см. docs.render.com deploy SPA).
+# При первом подключении Blueprint подставьте своё имя сервиса / ветку при необходимости.
+
+services:
+  - type: web
+    name: grandastra-web
+    runtime: static
+    buildCommand: npm ci && npm run build -w @grandastra/web
+    staticPublishPath: ./apps/web/dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
