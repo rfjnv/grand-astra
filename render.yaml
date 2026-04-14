@@ -1,8 +1,17 @@
-# Blueprint Render: статический фронт (Vite) с SPA-rewrite.
-# Если сервис уже создан вручную в Dashboard — добавьте Rewrite: /* → /index.html (см. docs.render.com deploy SPA).
-# При первом подключении Blueprint подставьте своё имя сервиса / ветку при необходимости.
+# Blueprint Render: API (Node) + Static frontend (Vite SPA).
+# При первом подключении Blueprint — подставьте своё имя сервиса / ветку.
+# DATABASE_URL и JWT_SECRET задайте в Render Dashboard → Environment.
 
 services:
+  - type: web
+    name: grandastra-api
+    runtime: node
+    buildCommand: npm ci && npm run build -w @grandastra/api
+    startCommand: npm run start:api
+    envVars:
+      - key: NODE_ENV
+        value: production
+
   - type: web
     name: grandastra-web
     runtime: static
