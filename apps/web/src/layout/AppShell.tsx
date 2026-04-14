@@ -22,21 +22,21 @@ export function AppShell() {
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <aside
         style={{
-          width: 248,
+          width: 256,
           flexShrink: 0,
           borderRight: '1px solid var(--border)',
-          background: 'rgba(22,29,39,0.92)',
-          backdropFilter: 'blur(10px)',
+          background: 'var(--surface)',
           display: 'flex',
           flexDirection: 'column',
-          padding: '1rem 0.75rem',
+          padding: '1.1rem 0.8rem',
         }}
       >
-        <div style={{ padding: '0.35rem 0.65rem 1rem', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ fontWeight: 700, letterSpacing: '-0.03em', fontSize: '1.05rem' }}>
+        <div style={{ padding: '0.35rem 0.65rem 1.1rem', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ fontWeight: 700, letterSpacing: '-0.03em', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ color: 'var(--accent)', fontSize: '1.3rem' }}>&#9733;</span>
             Grand Astra
           </div>
-          <div style={{ color: 'var(--muted)', fontSize: '0.78rem', marginTop: 4 }}>CRM</div>
+          <div style={{ color: 'var(--muted)', fontSize: '0.75rem', marginTop: 4, letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>CRM Platform</div>
         </div>
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 12, flex: 1 }}>
           {nav.map((item) => (
@@ -45,13 +45,14 @@ export function AppShell() {
               to={item.to}
               end={item.end}
               style={({ isActive }) => ({
-                padding: '0.45rem 0.65rem',
+                padding: '0.5rem 0.7rem',
                 borderRadius: 8,
-                color: isActive ? 'var(--text)' : 'var(--muted)',
-                background: isActive ? 'rgba(61,139,253,0.14)' : 'transparent',
-                border: isActive ? '1px solid rgba(61,139,253,0.35)' : '1px solid transparent',
-                fontSize: '0.9rem',
+                color: isActive ? 'var(--accent-text)' : 'var(--muted)',
+                background: isActive ? 'var(--accent-soft)' : 'transparent',
+                border: isActive ? '1px solid rgba(212, 164, 78, 0.25)' : '1px solid transparent',
+                fontSize: '0.88rem',
                 fontWeight: isActive ? 600 : 500,
+                transition: 'all 0.15s ease',
               })}
             >
               {item.label}
@@ -85,8 +86,10 @@ export function AppShell() {
               borderRadius: 8,
               border: '1px solid var(--border)',
               background: 'transparent',
-              color: 'var(--text)',
-              padding: '0.45rem',
+              color: 'var(--muted)',
+              padding: '0.5rem',
+              fontSize: '0.85rem',
+              transition: 'border-color 0.15s ease',
             }}
           >
             Выйти
