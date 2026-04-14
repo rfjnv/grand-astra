@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../api/client';
 import { can, PermissionKeys } from '../auth/permissionKeys';
 import { useAuth } from '../auth/AuthContext';
@@ -46,6 +47,7 @@ function buildQuery(params: Record<string, string | undefined>) {
 
 export function DealsPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState(false);
@@ -323,7 +325,7 @@ export function DealsPage() {
             </thead>
             <tbody>
               {rows.map((d) => (
-                <tr key={d.id}>
+                <tr key={d.id} onClick={() => navigate(`/deals/${d.id}`)} style={{ cursor: 'pointer' }}>
                   <td>{clientName(d.client)}</td>
                   <td>
                     <span className="badge badge-accent">{d.type}</span>
@@ -337,7 +339,10 @@ export function DealsPage() {
                     <td>
                       <button
                         type="button"
-                        onClick={() => void openEdit(d.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void openEdit(d.id);
+                        }}
                         style={{
                           border: '1px solid var(--border)',
                           background: 'transparent',

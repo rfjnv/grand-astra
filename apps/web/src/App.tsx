@@ -13,6 +13,7 @@ import { PaymentsPage } from './pages/PaymentsPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { UsersPage } from './pages/UsersPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { DealDetailPage } from './pages/DealDetailPage';
 
 function Protected({ children }: { children: ReactElement }) {
   const { user, loading } = useAuth();
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="clients" element={<ClientsPage />} />
         <Route path="properties" element={<PropertiesPage />} />
         <Route path="deals" element={<DealsPage />} />
+        <Route path="deals/:id" element={<DealDetailPage />} />
         <Route path="construction" element={<ConstructionPage />} />
         <Route path="expenses" element={<ExpensesPage />} />
         <Route path="payments" element={<PaymentsPage />} />
