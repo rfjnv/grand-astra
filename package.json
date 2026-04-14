@@ -12,7 +12,8 @@
     "db:migrate": "npm exec --workspace=@grandastra/api -- prisma migrate dev",
     "db:migrate:deploy": "npm exec --workspace=@grandastra/api -- prisma migrate deploy",
     "db:seed": "npm exec --workspace=@grandastra/api -- prisma db seed",
-    "docker:postgres": "docker compose up -d postgres"
+    "docker:postgres": "docker compose up -d postgres",
+    "start:api": "node apps/api/dist/src/main.js"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
