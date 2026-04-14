@@ -14,6 +14,16 @@ type DealDetail = {
   responsible: { firstName: string | null; lastName: string | null } | null;
 };
 type StageOption = { id: string; name: string; dealType: 'SALE' | 'RENT' | 'CONSTRUCTION' };
+type PaymentStatus = 'PLANNED' | 'PAID' | 'OVERDUE' | string;
+type ScheduledPayment = {
+  id: string;
+  dueDate: string;
+  amount: string;
+  currency: string;
+  purpose: string;
+  status: PaymentStatus;
+  deal: { id: string };
+};
 
 function clientLabel(client: DealDetail['client']) {
   if (!client) return '—';
@@ -26,11 +36,22 @@ function userLabel(user: DealDetail['responsible']) {
   return [user.firstName, user.lastName].filter(Boolean).join(' ') || '—';
 }
 
+function paymentBadgeClass(status: PaymentStatus) {
+  if (status === 'PAID') return 'badge badge-success';
+  if (status === 'OVERDUE') return 'badge badge-danger';
+  if (status === 'PLANNED') return 'badge badge-warn';
+  return 'badge';
+}
+
 export function DealDetailPage() {
   const { user } = useAuth();
   const { id } = useParams<{ id: string }>();
   const [deal, setDeal] = useState<DealDetail | null>(null);
   const [stages, setStages] = useState<StageOption[]>([]);
+  const [payments, setPayments] = useState<ScheduledPayment[]>([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(true);
+  const [paymentsError, setPaymentsError] = useState<string | null>(null);
+  const [updatingPaymentId, setUpdatingPaymentId] = useState<string | null>(null);
   const [savingStage, setSavingStage] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +106,36 @@ export function DealDetailPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!id) {
+      setPayments([]);
+      setPaymentsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setPaymentsLoading(true);
+    setPaymentsError(null);
+    void (async () => {
+      try {
+        const response = await apiFetch<ScheduledPayment[]>('/api/finance/schedules');
+        if (!cancelled) {
+          setPayments(response.filter((payment) => payment.deal.id === id));
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setPaymentsError(e instanceof Error ? e.message : 'Ошибка загрузки платежей');
+        }
+      } finally {
+        if (!cancelled) {
+          setPaymentsLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
   const amountLabel = useMemo(() => {
     if (!deal?.amount) return '—';
     const amount = Number(deal.amount);
@@ -93,6 +144,7 @@ export function DealDetailPage() {
   }, [deal?.amount]);
 
   const canEditStage = can(user, PermissionKeys.DEALS_WRITE);
+  const canManagePayments = can(user, PermissionKeys.FINANCE_SCHEDULES);
   const stageOptions = useMemo(
     () => stages.filter((stage) => stage.dealType === deal?.type),
     [stages, deal?.type],
@@ -112,6 +164,22 @@ export function DealDetailPage() {
       setError(e instanceof Error ? e.message : 'Не удалось обновить этап');
     } finally {
       setSavingStage(false);
+    }
+  }
+
+  async function onMarkAsPaid(paymentId: string) {
+    setUpdatingPaymentId(paymentId);
+    setPaymentsError(null);
+    try {
+      const updated = await apiFetch<ScheduledPayment>(`/api/finance/schedules/${paymentId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'PAID' }),
+      });
+      setPayments((current) => current.map((payment) => (payment.id === paymentId ? { ...payment, ...updated } : payment)));
+    } catch (e) {
+      setPaymentsError(e instanceof Error ? e.message : 'Не удалось обновить платеж');
+    } finally {
+      setUpdatingPaymentId(null);
     }
   }
 
@@ -179,9 +247,61 @@ export function DealDetailPage() {
 
       <section className="card">
         <h2 style={{ marginTop: 0, marginBottom: 8 }}>Payments</h2>
-        <div className="empty" style={{ padding: '0.5rem 0' }}>
-          Empty section
-        </div>
+        {paymentsError ? <div style={{ color: 'var(--danger)', marginBottom: 8 }}>{paymentsError}</div> : null}
+        {paymentsLoading ? <div className="empty" style={{ padding: '0.5rem 0' }}>Загрузка платежей…</div> : null}
+        {!paymentsLoading && payments.length === 0 ? (
+          <div className="empty" style={{ padding: '0.5rem 0' }}>
+            Нет платежей по сделке.
+          </div>
+        ) : null}
+        {!paymentsLoading && payments.length > 0 ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Дата</th>
+                  <th>Сумма</th>
+                  <th>Статус</th>
+                  <th>Описание</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {payments.map((payment) => (
+                  <tr key={payment.id}>
+                    <td>{new Date(payment.dueDate).toLocaleDateString('ru-RU')}</td>
+                    <td>
+                      {payment.amount} {payment.currency}
+                    </td>
+                    <td>
+                      <span className={paymentBadgeClass(payment.status)}>{payment.status}</span>
+                    </td>
+                    <td>{payment.purpose || '—'}</td>
+                    <td>
+                      {canManagePayments && payment.status !== 'PAID' ? (
+                        <button
+                          type="button"
+                          onClick={() => void onMarkAsPaid(payment.id)}
+                          disabled={updatingPaymentId === payment.id}
+                          style={{
+                            border: '1px solid var(--border)',
+                            background: 'transparent',
+                            color: 'var(--accent)',
+                            borderRadius: 6,
+                            fontSize: '0.78rem',
+                            padding: '0.2rem 0.45rem',
+                          }}
+                        >
+                          {updatingPaymentId === payment.id ? 'Saving…' : 'Mark as Paid'}
+                        </button>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </section>
 
       <section className="card">
