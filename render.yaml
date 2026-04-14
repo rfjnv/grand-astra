@@ -1,10 +1,9 @@
 # Blueprint Render: API (Node) + Static frontend (Vite SPA).
-# При первом подключении Blueprint — подставьте своё имя сервиса / ветку.
 # DATABASE_URL и JWT_SECRET задайте в Render Dashboard → Environment.
 
 services:
   - type: web
-    name: grandastra-api
+    name: grand-astra-backend
     runtime: node
     buildCommand: npm ci && npm run build -w @grandastra/api
     startCommand: npm run start:api
@@ -13,10 +12,13 @@ services:
         value: production
 
   - type: web
-    name: grandastra-web
+    name: grand-astra
     runtime: static
     buildCommand: npm ci && npm run build -w @grandastra/web
     staticPublishPath: ./apps/web/dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://grand-astra-backend.onrender.com
     routes:
       - type: rewrite
         source: /*
