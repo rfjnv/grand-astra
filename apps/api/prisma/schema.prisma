@@ -1,0 +1,602 @@
+// Grand Astra CRM — production-oriented schema (deal stages, multi-currency, events, notifications, RBAC).
+// Для Docker/прод: PostgreSQL. Для локальной разработки без Docker можно временно поставить provider = "sqlite".
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ClientType {
+  PERSON
+  COMPANY
+}
+
+enum InteractionType {
+  CALL
+  MESSAGE
+  MEETING
+}
+
+enum PropertyKind {
+  HOUSE
+  LAND
+  APARTMENT
+  COMMERCIAL
+}
+
+enum PropertyStatus {
+  AVAILABLE
+  RESERVED
+  SOLD
+  LEASED
+  UNDER_CONSTRUCTION
+}
+
+enum DealType {
+  SALE
+  RENT
+  CONSTRUCTION
+}
+
+enum AttachmentKind {
+  PHOTO
+  DOCUMENT
+}
+
+enum ExpenseScope {
+  COMPANY
+  CLIENT
+  DEAL
+  PROPERTY
+  CONSTRUCTION
+}
+
+enum ExpenseStatus {
+  PLANNED
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum ScheduleStatus {
+  PLANNED
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+/// Доменные события для автоматизации и аудита.
+enum EventType {
+  DEAL_STAGE_CHANGED
+  PAYMENT_OVERDUE
+  NEW_CLIENT
+  PAYMENT_RECEIVED
+  NEW_DEAL
+  DEAL_UPDATED
+  EXPENSE_CREATED
+  INCOME_CREATED
+}
+
+enum NotificationType {
+  INFO
+  WARNING
+  SUCCESS
+  DEAL_STAGE_CHANGED
+  PAYMENT_OVERDUE
+  NEW_CLIENT
+  PAYMENT_RECEIVED
+  NEW_DEAL
+}
+
+model Organization {
+  id           String   @id @default(cuid())
+  name         String
+  code         String   @unique
+  parentId     String?
+  parent       Organization?  @relation("BranchHierarchy", fields: [parentId], references: [id])
+  children     Organization[] @relation("BranchHierarchy")
+  /// Базовая валюта для normalizedAmountBase (отчёты, P&L).
+  baseCurrency String   @default("UZS")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  departments   Department[]
+  users         User[]
+  roles         Role[]
+  clients       Client[]
+  properties    Property[]
+  deals         Deal[]
+  dealStages    DealStage[]
+  projects      ConstructionProject[]
+  expenses      Expense[]
+  incomes       Income[]
+  schedules     ScheduledPayment[]
+  auditLogs     AuditLog[]
+  currencyRates CurrencyRate[]
+  eventLogs     EventLog[]
+  notifications Notification[]
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  key         String           @unique
+  description String?
+  roles       RolePermission[]
+}
+
+model Role {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  slug           String
+  /// Системные роли (нельзя удалять из UI без super-admin).
+  isSystem       Boolean      @default(true)
+  users          User[]
+  permissions    RolePermission[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+/// Курс: 1 единица quoteCurrency = rateToBase единиц baseCurrency организации.
+model CurrencyRate {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  quoteCurrency  String
+  rateToBase     Decimal      @db.Decimal(24, 10)
+  validFrom      DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, quoteCurrency, validFrom])
+}
+
+/// Воронка по типу сделки в рамках филиала.
+model DealStage {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  dealType       DealType
+  name           String
+  sortOrder      Int
+  deals          Deal[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, dealType, sortOrder])
+  @@index([organizationId, dealType])
+}
+
+model Department {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  directorUserId String?
+  director       User?    @relation("DepartmentDirector", fields: [directorUserId], references: [id])
+  users          User[]   @relation("DepartmentMembers")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
+}
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  passwordHash   String
+  firstName      String
+  lastName       String
+  roleId         String
+  role           Role      @relation(fields: [roleId], references: [id])
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  departmentId   String?
+  department     Department?  @relation("DepartmentMembers", fields: [departmentId], references: [id])
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  directedDepartments   Department[] @relation("DepartmentDirector")
+  assignedClients       Client[]     @relation("ClientAssignee")
+  clientInteractions    ClientInteraction[]
+  dealsResponsible      Deal[]       @relation("DealResponsible")
+  expensesCreated       Expense[]    @relation("ExpenseAuthor")
+  incomesCreated        Income[]     @relation("IncomeAuthor")
+  auditLogs             AuditLog[]
+  dealChanges           DealChangeLog[]
+  propertyAttachments   PropertyAttachment[] @relation("PropertyAttachmentAuthor")
+  stageAttachments      ConstructionStageAttachment[] @relation("StageAttachmentAuthor")
+  notifications         Notification[]
+  eventLogs             EventLog[]   @relation("EventActor")
+
+  @@index([organizationId])
+  @@index([departmentId])
+  @@index([roleId])
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?    @relation(fields: [userId], references: [id])
+  action         String
+  entityType     String
+  entityId       String?
+  metadata       Json?
+  ip             String?
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([entityType, entityId])
+}
+
+/// События домена (для интеграций, аналитики, повторной обработки).
+model EventLog {
+  id                String    @id @default(cuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  eventType         EventType
+  payload           Json?
+  actorUserId       String?
+  actor             User?     @relation("EventActor", fields: [actorUserId], references: [id])
+  relatedEntityType String?
+  relatedEntityId   String?
+  createdAt         DateTime  @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([eventType])
+  @@index([relatedEntityType, relatedEntityId])
+}
+
+model Notification {
+  id                String           @id @default(cuid())
+  userId            String
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId    String
+  organization      Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  type              NotificationType @default(INFO)
+  title             String?
+  message           String
+  isRead            Boolean          @default(false)
+  relatedEntityType String?
+  relatedEntityId   String?
+  createdAt         DateTime         @default(now())
+
+  @@index([userId, isRead, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+model Client {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  type           ClientType
+  firstName      String?
+  lastName       String?
+  companyName    String?
+  phones         Json         @default("[]")
+  emails         Json         @default("[]")
+  messengers     Json         @default("[]")
+  leadSource     String?
+  status         String       @default("NEW")
+  notes          String?
+  assignedUserId String?
+  assignedUser   User?        @relation("ClientAssignee", fields: [assignedUserId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  interactions         ClientInteraction[]
+  deals                Deal[]
+  ownedProperties      Property[] @relation("PropertyOwner")
+  constructionProjects ConstructionProject[]
+  expenses             Expense[]
+  incomes              Income[]
+
+  @@index([organizationId])
+  @@index([assignedUserId])
+  @@index([organizationId, status])
+}
+
+model ClientInteraction {
+  id          String          @id @default(cuid())
+  clientId    String
+  client      Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  type        InteractionType
+  occurredAt  DateTime
+  summary     String
+  createdById String
+  createdBy   User            @relation(fields: [createdById], references: [id])
+  createdAt   DateTime        @default(now())
+
+  @@index([clientId, occurredAt])
+}
+
+model Property {
+  id                    String          @id @default(cuid())
+  organizationId        String
+  organization          Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  kind                  PropertyKind
+  title                 String?
+  addressLine           String
+  city                  String?
+  region                String?
+  country               String          @default("UZ")
+  areaM2                Float?
+  salePrice             Decimal?        @db.Decimal(18, 2)
+  rentPrice             Decimal?        @db.Decimal(18, 2)
+  currency              String          @default("UZS")
+  status                PropertyStatus  @default(AVAILABLE)
+  ownerClientId         String?
+  ownerClient           Client?         @relation("PropertyOwner", fields: [ownerClientId], references: [id])
+  constructionProjectId String?
+  constructionProject   ConstructionProject? @relation(fields: [constructionProjectId], references: [id])
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  attachments PropertyAttachment[]
+  deals       Deal[]
+  expenses    Expense[]
+  incomes     Income[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([organizationId, status])
+}
+
+model PropertyAttachment {
+  id           String         @id @default(cuid())
+  propertyId   String
+  property     Property       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  fileName     String
+  fileUrl      String
+  kind         AttachmentKind
+  uploadedById String
+  uploadedBy   User           @relation("PropertyAttachmentAuthor", fields: [uploadedById], references: [id])
+  createdAt    DateTime       @default(now())
+
+  @@index([propertyId])
+}
+
+model ConstructionProject {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  clientId       String?
+  client         Client?      @relation(fields: [clientId], references: [id])
+  siteAddress    String?
+  budgetAmount   Decimal?     @db.Decimal(18, 2)
+  currency       String       @default("UZS")
+  plannedStart   DateTime?
+  plannedEnd     DateTime?
+  status         String       @default("PLANNING")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  stages     ConstructionStage[]
+  properties Property[]
+  deals      Deal[]
+  expenses   Expense[]
+  incomes    Income[]
+
+  @@index([organizationId])
+}
+
+model ConstructionStage {
+  id           String              @id @default(cuid())
+  projectId    String
+  project      ConstructionProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title        String
+  sortOrder    Int                 @default(0)
+  dueDate      DateTime?
+  status       String              @default("PENDING")
+  budgetAmount Decimal?            @db.Decimal(18, 2)
+  notes        String?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  contractors StageContractor[]
+  materials   StageMaterial[]
+  attachments ConstructionStageAttachment[]
+
+  @@index([projectId])
+}
+
+model StageContractor {
+  id        String            @id @default(cuid())
+  stageId   String
+  stage     ConstructionStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  name      String
+  phone     String?
+  email     String?
+  role      String?
+  createdAt DateTime          @default(now())
+}
+
+model StageMaterial {
+  id         String            @id @default(cuid())
+  stageId    String
+  stage      ConstructionStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  itemName   String
+  quantity   Float?
+  unit       String?
+  unitPrice  Decimal?          @db.Decimal(18, 2)
+  totalPrice Decimal?          @db.Decimal(18, 2)
+  recordedAt DateTime          @default(now())
+}
+
+model ConstructionStageAttachment {
+  id           String            @id @default(cuid())
+  stageId      String
+  stage        ConstructionStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  fileName     String
+  fileUrl      String
+  kind         AttachmentKind
+  uploadedById String
+  uploadedBy   User              @relation("StageAttachmentAuthor", fields: [uploadedById], references: [id])
+  createdAt    DateTime          @default(now())
+
+  @@index([stageId])
+}
+
+model Deal {
+  id                    String       @id @default(cuid())
+  organizationId        String
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  type                  DealType
+  dealStageId           String
+  dealStage             DealStage    @relation(fields: [dealStageId], references: [id])
+  responsibleUserId     String
+  responsible           User         @relation("DealResponsible", fields: [responsibleUserId], references: [id])
+  clientId              String
+  client                Client       @relation(fields: [clientId], references: [id])
+  propertyId            String?
+  property              Property?    @relation(fields: [propertyId], references: [id])
+  constructionProjectId String?
+  constructionProject   ConstructionProject? @relation(fields: [constructionProjectId], references: [id])
+  openedAt              DateTime     @default(now())
+  closedAt              DateTime?
+  amount                Decimal?     @db.Decimal(18, 2)
+  advanceAmount         Decimal?     @db.Decimal(18, 2)
+  balanceAmount         Decimal?     @db.Decimal(18, 2)
+  notes                 String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  changeLogs DealChangeLog[]
+  expenses   Expense[]
+  incomes    Income[]
+  schedules  ScheduledPayment[]
+
+  @@index([organizationId])
+  @@index([responsibleUserId])
+  @@index([clientId])
+  @@index([dealStageId])
+  @@index([organizationId, type])
+}
+
+model DealChangeLog {
+  id        String   @id @default(cuid())
+  dealId    String
+  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  changes   Json
+  createdAt DateTime @default(now())
+
+  @@index([dealId, createdAt])
+}
+
+model Expense {
+  id                     String        @id @default(cuid())
+  organizationId         String
+  organization           Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  paymentDate            DateTime
+  amount                 Decimal       @db.Decimal(18, 2)
+  currency               String        @default("UZS")
+  /// Сумма в базовой валюте организации на дату проводки.
+  normalizedAmountBase   Decimal       @db.Decimal(18, 2)
+  /// Множитель: amount * fxRateToBase = normalizedAmountBase (хранится для аудита).
+  fxRateToBase           Decimal       @db.Decimal(24, 10)
+  expenseType            String
+  paymentTerms           String?
+  paymentMethod          String?
+  comment                String?
+  status                 ExpenseStatus @default(PLANNED)
+  scope                  ExpenseScope
+  clientId               String?
+  client                 Client?       @relation(fields: [clientId], references: [id])
+  dealId                 String?
+  deal                   Deal?         @relation(fields: [dealId], references: [id])
+  propertyId             String?
+  property               Property?     @relation(fields: [propertyId], references: [id])
+  projectId              String?
+  project                ConstructionProject? @relation(fields: [projectId], references: [id])
+  createdById            String
+  createdBy              User          @relation("ExpenseAuthor", fields: [createdById], references: [id])
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  @@index([organizationId, paymentDate])
+  @@index([organizationId, status, paymentDate])
+  @@index([status])
+}
+
+model Income {
+  id                   String       @id @default(cuid())
+  organizationId       String
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  receivedAt           DateTime
+  amount               Decimal      @db.Decimal(18, 2)
+  currency             String       @default("UZS")
+  normalizedAmountBase Decimal      @db.Decimal(18, 2)
+  fxRateToBase         Decimal      @db.Decimal(24, 10)
+  incomeType           String
+  paymentMethod        String?
+  comment              String?
+  createdById          String
+  createdBy            User         @relation("IncomeAuthor", fields: [createdById], references: [id])
+  clientId             String?
+  client               Client?      @relation(fields: [clientId], references: [id])
+  dealId               String?
+  deal                 Deal?        @relation(fields: [dealId], references: [id])
+  propertyId           String?
+  property             Property?    @relation(fields: [propertyId], references: [id])
+  projectId            String?
+  project              ConstructionProject? @relation(fields: [projectId], references: [id])
+  isCompanyLevel       Boolean      @default(false)
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  schedulesPaid ScheduledPayment[]
+
+  @@index([organizationId, receivedAt])
+  @@index([dealId])
+}
+
+model ScheduledPayment {
+  id                     String         @id @default(cuid())
+  organizationId         String
+  organization           Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  dealId                 String
+  deal                   Deal           @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  clientId               String?
+  dueDate                DateTime
+  amount                 Decimal        @db.Decimal(18, 2)
+  currency               String         @default("UZS")
+  normalizedAmountBase   Decimal?       @db.Decimal(18, 2)
+  fxRateToBase           Decimal?       @db.Decimal(24, 10)
+  purpose                String
+  status                 ScheduleStatus @default(PLANNED)
+  paidAt                 DateTime?
+  linkedIncomeId         String?
+  linkedIncome           Income?        @relation(fields: [linkedIncomeId], references: [id])
+  reminderSentAt         DateTime?
+  overdueNotifiedAt      DateTime?
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+
+  @@index([organizationId, dueDate])
+  @@index([organizationId, status, dueDate])
+  @@index([status])
+  @@index([dealId])
+}

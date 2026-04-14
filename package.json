@@ -1,0 +1,19 @@
+{
+  "name": "grandastra-crm",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev -w @grandastra/api\" \"npm run dev -w @grandastra/web\"",
+    "build": "npm run build -w @grandastra/api && npm run build -w @grandastra/web",
+    "db:generate": "npm run prisma:generate -w @grandastra/api",
+    "db:migrate": "npm run prisma:migrate -w @grandastra/api",
+    "db:seed": "npm run prisma:seed -w @grandastra/api",
+    "docker:postgres": "docker compose up -d postgres"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
