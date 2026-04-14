@@ -4,8 +4,8 @@ import { useAuth } from '../auth/AuthContext';
 
 export function LoginPage() {
   const { user, login, loading } = useAuth();
-  const [email, setEmail] = useState('owner@grandastra.local');
-  const [password, setPassword] = useState('GrandAstra!1');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -87,10 +87,6 @@ export function LoginPage() {
             {busy ? 'Вход…' : 'Войти'}
           </button>
         </form>
-        <p style={{ marginTop: 16, fontSize: '0.8rem', color: 'var(--muted)', lineHeight: 1.45 }}>
-          Демо после <code style={{ color: 'var(--text)' }}>npm run db:seed</code>: владелец{' '}
-          <code>owner@grandastra.local</code> / <code>GrandAstra!1</code>
-        </p>
       </div>
     </div>
   );

@@ -138,6 +138,7 @@ async function seedDealStages(orgId: string) {
     });
   }
   return {
+    saleLead: 'seed_ds_sale_0',
     saleContract: 'seed_ds_sale_2',
     saleClosed: 'seed_ds_sale_3',
     rentActive: 'seed_ds_rent_2',
@@ -147,7 +148,13 @@ async function seedDealStages(orgId: string) {
 
 async function seedDemoData(
   orgId: string,
-  stageIds: { saleContract: string; saleClosed: string; rentActive: string; consExec: string },
+  stageIds: {
+    saleLead: string;
+    saleContract: string;
+    saleClosed: string;
+    rentActive: string;
+    consExec: string;
+  },
   managerId: string,
   accountantId: string,
   builderId: string,
@@ -206,6 +213,44 @@ async function seedDemoData(
       leadSource: 'SEED_DEMO',
       status: 'CONTRACT',
       notes: 'Заказчик коттеджа в Кибрае, этап кровля.',
+      assignedUserId: managerId,
+    },
+  });
+
+  /** Дополнительные синтетические записи (явно помечены FAKE_SEED). */
+  const clientFakePerson = await prisma.client.upsert({
+    where: { id: 'seed_cl_fake_person' },
+    update: {},
+    create: {
+      id: 'seed_cl_fake_person',
+      organizationId: orgId,
+      type: ClientType.PERSON,
+      firstName: 'Мария',
+      lastName: 'Демо',
+      phones: [{ value: '+998 90 000-00-01' }],
+      emails: [{ value: 'demo.fake@example.invalid' }],
+      messengers: [],
+      leadSource: 'FAKE_SEED',
+      status: 'NEW',
+      notes: 'Выдуманный контакт для наполнения списков и тестов UI.',
+      assignedUserId: managerId,
+    },
+  });
+
+  await prisma.client.upsert({
+    where: { id: 'seed_cl_fake_company' },
+    update: {},
+    create: {
+      id: 'seed_cl_fake_company',
+      organizationId: orgId,
+      type: ClientType.COMPANY,
+      companyName: 'ИП «Пример-Тест»',
+      phones: [{ value: '+998 71 000-00-02' }],
+      emails: [{ value: 'info@example-fake.invalid' }],
+      messengers: [],
+      leadSource: 'FAKE_SEED',
+      status: 'NEW',
+      notes: 'Фиктивная организация, не использовать как реальный контрагент.',
       assignedUserId: managerId,
     },
   });
@@ -385,6 +430,23 @@ async function seedDemoData(
     },
   });
 
+  const propFakeStudio = await prisma.property.upsert({
+    where: { id: 'seed_pr_studio_fake' },
+    update: {},
+    create: {
+      id: 'seed_pr_studio_fake',
+      organizationId: orgId,
+      kind: PropertyKind.APARTMENT,
+      title: 'Студия 32 м² (синтетика)',
+      addressLine: 'ул. Выдуманная, 10',
+      city: 'Ташкент',
+      areaM2: 32,
+      salePrice: 41000,
+      currency: 'USD',
+      status: PropertyStatus.AVAILABLE,
+    },
+  });
+
   await prisma.propertyAttachment.upsert({
     where: { id: 'seed_patt_1' },
     update: {},
@@ -472,6 +534,23 @@ async function seedDemoData(
       advanceAmount: 28000,
       balanceAmount: 0,
       notes: 'Участок продан, сделка закрыта.',
+    },
+  });
+
+  await prisma.deal.upsert({
+    where: { id: 'seed_deal_fake_lead' },
+    update: { dealStageId: stageIds.saleLead },
+    create: {
+      id: 'seed_deal_fake_lead',
+      organizationId: orgId,
+      type: DealType.SALE,
+      dealStageId: stageIds.saleLead,
+      responsibleUserId: managerId,
+      clientId: clientFakePerson.id,
+      propertyId: propFakeStudio.id,
+      openedAt: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000),
+      amount: 41000,
+      notes: 'FAKE_SEED: фиктивная сделка на этапе «Лид».',
     },
   });
 
@@ -850,7 +929,7 @@ async function main() {
   await seedDemoData(org.id, stageIds, manager.id, accountant.id, builder.id);
 
   // eslint-disable-next-line no-console
-  console.log('Seed OK. PostgreSQL. Логин: owner@grandastra.local / GrandAstra!1');
+  console.log('Seed OK. Демо-данные загружены (в т.ч. FAKE_SEED). Учётные данные не выводятся в лог.');
 }
 
 main()
