@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { apiFetch } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
+import { can, PermissionKeys } from '../auth/permissionKeys';
 
 type DealDetail = {
   id: string;
@@ -11,6 +13,7 @@ type DealDetail = {
   client: { firstName: string | null; lastName: string | null; companyName: string | null } | null;
   responsible: { firstName: string | null; lastName: string | null } | null;
 };
+type StageOption = { id: string; name: string; dealType: 'SALE' | 'RENT' | 'CONSTRUCTION' };
 
 function clientLabel(client: DealDetail['client']) {
   if (!client) return '—';
@@ -24,8 +27,11 @@ function userLabel(user: DealDetail['responsible']) {
 }
 
 export function DealDetailPage() {
+  const { user } = useAuth();
   const { id } = useParams<{ id: string }>();
   const [deal, setDeal] = useState<DealDetail | null>(null);
+  const [stages, setStages] = useState<StageOption[]>([]);
+  const [savingStage, setSavingStage] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,12 +68,52 @@ export function DealDetailPage() {
     };
   }, [id]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await apiFetch<StageOption[]>('/api/deal-stages');
+        if (!cancelled) {
+          setStages(response);
+        }
+      } catch {
+        /* ignore optional stage loading errors */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const amountLabel = useMemo(() => {
     if (!deal?.amount) return '—';
     const amount = Number(deal.amount);
     if (Number.isNaN(amount)) return deal.amount;
     return amount.toLocaleString('ru-RU');
   }, [deal?.amount]);
+
+  const canEditStage = can(user, PermissionKeys.DEALS_WRITE);
+  const stageOptions = useMemo(
+    () => stages.filter((stage) => stage.dealType === deal?.type),
+    [stages, deal?.type],
+  );
+
+  async function onStageChange(nextStageId: string) {
+    if (!id || !deal || nextStageId === deal.dealStage?.id) return;
+    setSavingStage(true);
+    setError(null);
+    try {
+      const updated = await apiFetch<DealDetail>(`/api/deals/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ dealStageId: nextStageId }),
+      });
+      setDeal(updated);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось обновить этап');
+    } finally {
+      setSavingStage(false);
+    }
+  }
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
@@ -77,7 +123,32 @@ export function DealDetailPage() {
         </h1>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <span className="badge badge-accent">TYPE: {deal?.type ?? '—'}</span>
-          <span className="badge">STATUS: {deal?.dealStage?.name ?? '—'}</span>
+          {canEditStage ? (
+            <label className="badge" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+              STAGE:
+              <select
+                value={deal?.dealStage?.id ?? ''}
+                onChange={(e) => void onStageChange(e.target.value)}
+                disabled={savingStage || !deal || stageOptions.length === 0}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text)',
+                  fontSize: '0.72rem',
+                  padding: 0,
+                }}
+              >
+                <option value="">—</option>
+                {stageOptions.map((stage) => (
+                  <option key={stage.id} value={stage.id}>
+                    {stage.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <span className="badge">STATUS: {deal?.dealStage?.name ?? '—'}</span>
+          )}
         </div>
       </header>
 
